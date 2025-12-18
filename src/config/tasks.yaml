@@ -1,0 +1,282 @@
+data_fetcher_task:
+    description: >
+        Analyze the customer's request to identify each product name they have explicitly mentioned. Extract only the exact product names
+        as stated by the customer - do not paraphrase, interpret, or assume additional products. Create a precise list containing only
+        the products the customer specifically requested, then use the Tool to retrieve available inventory data for these exact items.
+        
+        Customer's complete request: '{customer_requirements}'
+        
+        Instructions:
+        1. Read the customer request carefully to identify each product name mentioned
+        2. Extract only explicitly stated product names without modification
+        3. Do not infer or add products not directly mentioned
+        4. Pass the exact product name list to the Tool
+    expected_output: >
+        The complete, unmodified JSON output returned directly from the Tool, containing inventory data for all products that were
+        explicitly mentioned in the customer's request and successfully found in the database.
+    agent: data_fetcher_agent
+
+
+pricing_strategy_task:
+    description: >
+        Generate a comprehensive validation report by checking each customer-requested item against the provided inventory data.
+        
+        Customer's Original Request: '{customer_requirements}'
+
+        Process systematically:
+        1. **Extract Customer Requirements**: Parse the customer's request to identify each product name, requested quantity, and any 
+           specified attributes (color, size, etc.) exactly as stated.
+        2. **Validate Each Item Against Inventory**: For each customer-requested item:
+           - Verify product existence in the provided inventory data
+           - Check if requested attributes match available options
+           - Note any discrepancies in specifications
+        3. **Generate Preliminary Status**: Create an initial status assessment for each item based on inventory validation.
+        4. **Calculate Pricing**: For products confirmed to exist in inventory, format the data correctly and call the 
+           'Advanced Pricing Calculator Tool'.
+        5. **Compile Final Report**: Combine pricing tool results with validation findings to create a comprehensive JSON report
+           that addresses every item from the customer's original request.
+
+        Critical Requirements:
+        - Account for every product the customer mentioned
+        - Base all validation on actual inventory data provided
+        - Never create pricing for non-existent products
+        - Provide clear status explanations for all items
+    expected_output: >
+        A single JSON string containing an array of objects, with each object representing one item from the customer's original
+        request. Each object must include validation status and pricing information where applicable.
+        
+        Required structure for each item:
+        ```json
+        {
+          "product_name": "[exact name from customer request]",
+          "quantity_requested": [number],
+          "approved_for_quote": [true/false],
+          "base_single_unit_price": [price if available],
+          "final_single_unit_price": [price if available],
+          "total_price": [calculated total if available],
+          "net_price_adjustment_percentage": [percentage if available],
+          "reasoning_breakdown": [array of pricing reasons if available],
+          "competitors": [competitor pricing object if available],
+          "status": "[clear explanation of availability/issues]"
+        }
+        ```
+    agent: pricing_strategy_agent
+
+
+event_scouting_task:
+    description: >
+        Search for verified information about major Indian festivals, national holidays, and significant e-commerce events occurring
+        between {start_date} and {end_date}. Focus on events with confirmed dates from reliable sources.
+        
+        Search criteria:
+        1. Major national festivals celebrated across India
+        2. Official national holidays
+        3. Confirmed major e-commerce sales events from platforms like Amazon, Flipkart
+        4. Events with documented nationwide commercial impact
+        
+        Verification requirements:
+        - Use reliable sources for event dates
+        - Confirm events are actually scheduled within the specified timeframe
+        - Focus on events with proven commercial significance
+        
+        Current reference date: {start_date}
+        Search period: {start_date} to {end_date}
+    expected_output: >
+        A factual list of verified upcoming events with confirmed dates, formatted as:
+        - [Event Name] - [Verified Date]
+        
+        Example:
+        - Raksha Bandhan - August 19, 2025
+        - Independence Day - August 15, 2025
+        - Amazon Great Indian Festival - September 15, 2025
+        
+        If no major events are found in the timeframe, state: "No major events found in the specified period."
+    agent: event_scout_agent
+
+
+price_analysis_task:
+    description: >
+        Apply strict validation criteria to filter the event list, retaining only events with documented nationwide commercial impact.
+        
+        Filtering criteria:
+        1. Events must have nationwide recognition and participation
+        2. Events must have documented history of driving retail sales
+        3. Regional holidays and minor observances must be excluded
+        4. Events must be comparable in commercial impact to: Diwali, Holi, Raksha Bandhan, Independence Day, Republic Day, 
+           major e-commerce sales events
+        
+        For qualifying events, determine:
+        - Event type (National Holiday, Religious Festival, Commercial Event)
+        - Event name
+        - Days remaining from {start_date}
+        
+        Reference date for calculations: {start_date}
+    expected_output: >
+        If qualifying events exist, format each as:
+        ```
+        type: [Event Type]
+        occasion: [Event Name]
+        coming_in: [X] days
+        ```
+        
+        If no events meet the strict criteria, output exactly:
+        "No major festivals or occasions in the next 14 days."
+    agent: price_impact_analyst_agent
+
+
+assess_risk_task:
+  description: >
+    Systematically assess business risk for each product item using the Risk Assessment Tool.
+    
+    Process requirements:
+    1. **Individual Item Processing**: Process each product from the pricing_strategy_task output separately
+    2. **Tool Application**: Call the Risk Assessment Tool for each individual product item
+    3. **Input Format**: Convert each product's JSON object to a string for tool input. Don't add comments or extra test. Input to risk assessment tool should be signle product's data. 
+    4. **Result Compilation**: Collect all risk assessment results and categorize by risk level
+    5. **Summary Generation**: Create a comprehensive report categorizing all assessed items
+    
+    Processing workflow:
+    - Receive the complete product list from previous task
+    - Process each product individually through the Risk Assessment Tool
+    - Compile results based on the 'risk_level' field returned by the tool
+    - Generate summary report with proper categorization
+
+  expected_output: >
+    A structured risk assessment summary report categorizing all items by their assessed risk level.
+    
+    Required format:
+    ```
+    **Overall Risk Assessment Summary**
+    
+    Analysis completed for [X] items in the quote. Risk breakdown:
+    
+    **High-Risk Items Identified:**
+    - [Product Name]: [Specific risk reason from tool]
+    - [Product Name]: [Specific risk reason from tool]
+    
+    **Low-Risk Items:**
+    - [Product Name]: [Status confirmation from tool]
+    - [Product Name]: [Status confirmation from tool]
+    ```
+    
+    All categorizations must be based on the actual 'risk_level' field returned by the Risk Assessment Tool.
+  agent: approval_logic_agent
+
+
+strategic_discount_task:
+    description: >
+        Apply strategic discounts based on factual competitor data and verified event information.
+        
+        Process for each item with "approved_for_quote": true:
+        1. **Competitor Analysis**:
+           - Identify the lowest competitor price from the 'competitors' object
+           - ONLY if our 'final_single_unit_price' exceeds the lowest competitor price, calculate a competitive adjustment
+           - Make our final price 1-2% below the lowest competitor price
+           - DO NOT apply competitive discount if our price is already competitive
+        
+        2. **Event-Based Discounts**:
+           - Review provided event data for qualifying promotional opportunities
+           - Apply additional discounts only for verified major events within 15 days:
+             * Major Festival (e.g., Diwali, Raksha Bandhan): 10% discount
+             * Major E-commerce Event: 5% discount
+           - Apply event discounts to the price after any competitive adjustments
+        
+        3. **Final Calculation**:
+           - Calculate 'final_strategic_price' based on applicable discounts.
+           # --- FIX STARTS HERE ---
+           - Calculate 'final_total_price' by multiplying 'final_strategic_price' by 'quantity_requested'.
+           - Document all applied discounts in 'strategic_discount_reason' array.
+           # --- FIX ENDS HERE ---
+           - Only include reasons for discounts that were actually applied
+        
+        4. **Output Generation**:
+           - Return complete JSON with all original items
+           - Enrich approved items with new pricing fields
+           - Leave non-approved items unchanged
+    expected_output: >
+        A complete JSON string containing all items from the input, with approved items enhanced with strategic pricing fields:
+        - 'final_strategic_price': Final price after strategic discounts
+        - 'strategic_discount_reason': Array of justifications for applied discounts only
+        # --- FIX STARTS HERE ---
+        - 'final_total_price': The total price for the line item (final_strategic_price * quantity_requested)
+        
+        Example enhanced item:
+        ```json
+        {
+          "product_name": "Product Name",
+          "quantity_requested": 50,
+          "approved_for_quote": true,
+          "base_single_unit_price": 210.00,
+          "final_single_unit_price": 200.00,
+          "final_strategic_price": 180.00,
+          "final_total_price": 9000.00,
+          "strategic_discount_reason": ["Competitive adjustment vs lowest competitor", "Diwali festival discount (10%)"],
+          "status": "Available"
+        }
+        ```
+        # --- FIX ENDS HERE ---
+    agent: discount_strategist_agent
+
+
+generate_quotation_document_task:
+    description: >
+        Generate a professional quotation document using only the information provided in the final enriched JSON data.
+        
+        Document structure requirements:
+        1. **Header**: Title "GENERATED QUOTATION"
+        2. **Available Items Table**: 
+           - Include only items where "approved_for_quote": true
+           # --- FIX STARTS HERE ---
+           - Columns: Product Name, Quantity, MRP (Per Unit), Discount %, Total Price
+           - Use the 'base_single_unit_price' from the JSON as the MRP (Per Unit).
+           - Calculate Discount % using the formula: ((base_single_unit_price - final_strategic_price) / base_single_unit_price) * 100. Ensure the result is a positive number, rounded to two decimal places. If the base price is zero, the discount is 0.
+           - Use the 'final_total_price' from the JSON directly for the 'Total Price' column. Do not recalculate it.
+           # --- FIX ENDS HERE ---
+        3. **Discount Summary**: 
+           - List all pricing reasons from 'reasoning_breakdown' and 'strategic_discount_reason'
+           - Provide transparency for all applied discounts
+        4. **Unavailable Items**: 
+           - List items not approved for quote with their status explanations
+        5. **Grand Total**: 
+           # --- FIX STARTS HERE ---
+           - Calculate the grand total by summing the 'final_total_price' of all approved items from the JSON.
+           # --- FIX ENDS HERE ---
+        
+        Formatting requirements:
+        - Use Markdown formatting
+        - Prefix all prices with '₹' currency symbol
+        - Use information directly from JSON context only
+        - Maintain consistent structure for automated processing
+    expected_output: >
+        A complete, professionally formatted quotation document as a single Markdown string.
+        
+        Required structure:
+        ```
+        # GENERATED QUOTATION
+        ---
+        
+        ### Quotation for Available Items
+        
+        | Product Name | Quantity | MRP (Per Unit) | Discount % | Total Price |
+        |:-------------|:---------|:---------------|:-----------|:------------|
+        | [Product] | [Qty] | ₹[MRP] | [Discount]% | ₹[Total] |
+        
+        ---
+        
+        ### Discount & Pricing Summary
+        
+        - **[Product Name]**: [All discount reasons combined]
+        
+        ---
+        
+        ### Notes on Your Request
+        
+        - **[Product Name]**: [Status explanation]
+        
+        ---
+        
+        ### Grand Total
+        
+        **₹[Calculated Total]**
+        ```
+    agent: quotation_formatter_agent
